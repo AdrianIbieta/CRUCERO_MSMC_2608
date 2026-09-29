@@ -7977,8 +7977,8 @@ excelInput.addEventListener('change', function(e){
   });
 
   // Carga automática del Excel VITAC_XXXXX.xlsx en GitHub Pages / servidor web.
-  // Convención oficial: XXXXX = acrónimo del crucero/proyecto.
-  // Prioridad: ?excel=archivo.xlsx > acrónimo detectado en la URL > carga manual.
+  // Convención oficial: VITAC_ACRONIMO_CODIGO.xlsx (ej.: VITAC_MSMC_2608.xlsx).
+  // Prioridad: ?excel=archivo.xlsx > nombre derivado de la carpeta GitHub > carga manual.
   (function autoLoadVitacExcel(){
     try{
       if (location.protocol === 'file:') return; // en uso local se mantiene la carga manual
@@ -7999,32 +7999,49 @@ excelInput.addEventListener('change', function(e){
         }catch(_){ return ''; }
       }
 
-      function acronymFromLocation(){
+      function excelFromLocation(){
         var raw = '';
         try{ raw = decodeURIComponent(location.pathname || ''); }catch(_){ raw = location.pathname || ''; }
-        var s = String(raw).toUpperCase().replace(/%20/g,'_');
+        var parts = String(raw).split('/').filter(Boolean);
+        if (!parts.length) return '';
 
-        // Orden específico para evitar coincidencias parciales.
-        if (/JUREL[_\- ]?N(?:ORTE)?/.test(s)) return 'JUREL_N';
-        if (s.indexOf('PELAGUIN') >= 0) return 'PELAGUIN';
-        if (s.indexOf('MERCOM') >= 0 || s.indexOf('MERLUZA_COMUN') >= 0 || s.indexOf('MERLUZA-COMUN') >= 0) return 'MERCOM';
-        if (s.indexOf('MSMC') >= 0) return 'MSMC';
-        if (s.indexOf('RECLAN') >= 0) return 'RECLAN';
-        if (s.indexOf('PELACES') >= 0) return 'PELACES';
-        if (s.indexOf('RECLAS') >= 0) return 'RECLAS';
+        // En GitHub Pages el último segmento puede ser index.html; usamos entonces la carpeta padre.
+        var folder = parts[parts.length - 1];
+        if (/\.html?$/i.test(folder) && parts.length > 1) folder = parts[parts.length - 2];
+
+        folder = String(folder || '').trim().replace(/\s+/g,'_');
+        var upper = folder.toUpperCase();
+
+        // Convención recomendada:
+        //   CRUCERO_MSMC_2608  -> VITAC_MSMC_2608.xlsx
+        //   CRUCERO_MERCOM_2609 -> VITAC_MERCOM_2609.xlsx
+        // Se conserva todo lo que viene después de CRUCERO_, incluido el código de año/crucero.
+        var m = upper.match(/^CRUCERO_(.+)$/);
+        if (m && m[1]) return cleanFileName('VITAC_' + m[1] + '.xlsx');
+
+        // Si la carpeta ya usa el patrón VITAC_XXXXX, se reutiliza directamente.
+        m = upper.match(/^VITAC_(.+)$/);
+        if (m && m[1]) return cleanFileName('VITAC_' + m[1] + '.xlsx');
+
+        // Compatibilidad con carpetas antiguas sin prefijo CRUCERO_.
+        var s = upper;
+        if (/JUREL[_\- ]?N(?:ORTE)?/.test(s)) return 'VITAC_JUREL_N.xlsx';
+        if (s.indexOf('PELAGUIN') >= 0) return 'VITAC_PELAGUIN.xlsx';
+        if (s.indexOf('MERCOM') >= 0 || s.indexOf('MERLUZA_COMUN') >= 0 || s.indexOf('MERLUZA-COMUN') >= 0) return 'VITAC_MERCOM.xlsx';
+        if (s.indexOf('MSMC') >= 0) return 'VITAC_MSMC.xlsx';
+        if (s.indexOf('RECLAN') >= 0) return 'VITAC_RECLAN.xlsx';
+        if (s.indexOf('PELACES') >= 0) return 'VITAC_PELACES.xlsx';
+        if (s.indexOf('RECLAS') >= 0) return 'VITAC_RECLAS.xlsx';
         return '';
       }
 
       var excelPath = excelFromQuery();
-      if (!excelPath){
-        var acronym = acronymFromLocation();
-        if (acronym) excelPath = 'VITAC_' + acronym + '.xlsx';
-      }
+      if (!excelPath) excelPath = excelFromLocation();
 
       // Si la URL no permite identificar el crucero, no se provocan 404 innecesarios.
       if (!excelPath){
-        setStatus('0/7 · esperando Excel VITAC_XXXXX.xlsx…');
-        console.info('VITAC: no se detectó acrónimo en la URL. Carga el Excel manualmente o usa ?excel=VITAC_XXXXX.xlsx');
+        setStatus('0/7 · esperando Excel VITAC_ACRONIMO_CODIGO.xlsx…');
+        console.info('VITAC: no se pudo derivar el Excel desde la carpeta. Cárgalo manualmente o usa ?excel=VITAC_MSMC_2608.xlsx');
         return;
       }
 
@@ -8046,7 +8063,7 @@ excelInput.addEventListener('change', function(e){
         });
     }catch(err){
       console.warn('Fallo en autoLoadVitacExcel:', err);
-      setStatus('0/7 · esperando Excel VITAC_XXXXX.xlsx…');
+      setStatus('0/7 · esperando Excel VITAC_ACRONIMO_CODIGO.xlsx…');
     }
   })();
 });
