@@ -2,10 +2,11 @@
 <html lang="es" data-theme="light">
 <head>
   <!--
-    VITAC 3.0 · PERFILES
+    VITAC 3.1 · PERFILES
     Base funcional congelada: v19 validada con los Excel de los perfiles.
     Limpieza segura: parser numérico, sábana/leyenda, logos y timer trivial.
     No se modificó la lógica funcional de perfiles, filtros, regiones, subzonas o gráficos.
+    GitHub Pages: carga automática por convención VITAC_XXXXX.xlsx según acrónimo de URL.
   -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -2564,16 +2565,7 @@ html[data-theme='dark'] #freqSpeciesPills .species-pill.selected{
 
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script>
-  // GoatCounter solo en HTTP/HTTPS; en file:// genera un warning y no cuenta.
-  if (location.protocol === 'http:' || location.protocol === 'https:') {
-    var gc=document.createElement('script');
-    gc.async=true;
-    gc.src='https://gc.zgo.at/count.js';
-    gc.setAttribute('data-goatcounter','https://vitacreclas2601.goatcounter.com/count');
-    document.head.appendChild(gc);
-  }
-  </script>
+  <!-- Analítica externa removida en VITAC 3.1 GitHub para evitar bloqueos/adblockers. -->
 
 
 
@@ -2855,7 +2847,7 @@ document.addEventListener('DOMContentLoaded', function(){
     <header>
       <div class="brand">
         <img id="logo" alt="VITAC">
-        <div class="title">VITAC 3.0 — Visualizador de Tallas y Capturas
+        <div class="title">VITAC 3.1 — Visualizador de Tallas y Capturas
           <small>Perfiles · Adrián Ibieta - Jairo Gutiérrez</small>
         </div>
       </div>
@@ -7984,40 +7976,77 @@ excelInput.addEventListener('change', function(e){
     reader.readAsArrayBuffer(file);
   });
 
-  // Carga automática del Excel maestro por defecto cuando se abre el VITAC (por ejemplo en GitHub Pages)
-  (function autoLoadDefaultExcel(){
+  // Carga automática del Excel VITAC_XXXXX.xlsx en GitHub Pages / servidor web.
+  // Convención oficial: XXXXX = acrónimo del crucero/proyecto.
+  // Prioridad: ?excel=archivo.xlsx > acrónimo detectado en la URL > carga manual.
+  (function autoLoadVitacExcel(){
     try{
-      if (location.protocol === 'file:') return; // no estorbar en uso local
+      if (location.protocol === 'file:') return; // en uso local se mantiene la carga manual
       if (typeof fetch === 'undefined') return;
 
-      var DEFAULT_EXCEL_PATHS = ['EXCEL_MAESTRO_VITAC.xlsx', 'EXCEL_MAESTRO_VITAC_v2.xlsx'];
-
-      // Estado mientras se intenta cargar
-      setStatus('Cargando Excel maestro por defecto…');
-
-      function tryFetchDefault(idx){
-        if (idx >= DEFAULT_EXCEL_PATHS.length){
-          setStatus('0/7 · esperando Excel maestro…');
-          return;
-        }
-        var excelPath = DEFAULT_EXCEL_PATHS[idx];
-        fetch(excelPath)
-          .then(function(resp){
-            if (!resp.ok){ throw new Error('HTTP ' + resp.status); }
-            return resp.arrayBuffer();
-          })
-          .then(function(buffer){
-            if (fnExcel) fnExcel.textContent = excelPath;
-            loadExcelFromArrayBuffer(buffer, excelPath);
-          })
-          .catch(function(err){
-            console.warn('No se pudo cargar el Excel maestro por defecto:', excelPath, err);
-            tryFetchDefault(idx + 1);
-          });
+      function cleanFileName(name){
+        name = String(name || '').trim();
+        // Solo nombre relativo en la misma carpeta: evita rutas externas o ascendentes.
+        if (!name || /[\\/]/.test(name) || name.indexOf('..') >= 0) return '';
+        if (!/\.xlsx$/i.test(name)) return '';
+        return name;
       }
-      tryFetchDefault(0);
+
+      function excelFromQuery(){
+        try{
+          var p = new URLSearchParams(location.search || '');
+          return cleanFileName(p.get('excel'));
+        }catch(_){ return ''; }
+      }
+
+      function acronymFromLocation(){
+        var raw = '';
+        try{ raw = decodeURIComponent(location.pathname || ''); }catch(_){ raw = location.pathname || ''; }
+        var s = String(raw).toUpperCase().replace(/%20/g,'_');
+
+        // Orden específico para evitar coincidencias parciales.
+        if (/JUREL[_\- ]?N(?:ORTE)?/.test(s)) return 'JUREL_N';
+        if (s.indexOf('PELAGUIN') >= 0) return 'PELAGUIN';
+        if (s.indexOf('MERCOM') >= 0 || s.indexOf('MERLUZA_COMUN') >= 0 || s.indexOf('MERLUZA-COMUN') >= 0) return 'MERCOM';
+        if (s.indexOf('MSMC') >= 0) return 'MSMC';
+        if (s.indexOf('RECLAN') >= 0) return 'RECLAN';
+        if (s.indexOf('PELACES') >= 0) return 'PELACES';
+        if (s.indexOf('RECLAS') >= 0) return 'RECLAS';
+        return '';
+      }
+
+      var excelPath = excelFromQuery();
+      if (!excelPath){
+        var acronym = acronymFromLocation();
+        if (acronym) excelPath = 'VITAC_' + acronym + '.xlsx';
+      }
+
+      // Si la URL no permite identificar el crucero, no se provocan 404 innecesarios.
+      if (!excelPath){
+        setStatus('0/7 · esperando Excel VITAC_XXXXX.xlsx…');
+        console.info('VITAC: no se detectó acrónimo en la URL. Carga el Excel manualmente o usa ?excel=VITAC_XXXXX.xlsx');
+        return;
+      }
+
+      setStatus('Cargando ' + excelPath + '…');
+
+      fetch(encodeURI(excelPath), {cache:'no-store'})
+        .then(function(resp){
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          return resp.arrayBuffer();
+        })
+        .then(function(buffer){
+          if (fnExcel) fnExcel.textContent = excelPath;
+          loadExcelFromArrayBuffer(buffer, excelPath);
+          console.info('VITAC: Excel cargado automáticamente:', excelPath);
+        })
+        .catch(function(err){
+          console.warn('VITAC: no se encontró/cargó ' + excelPath + '. Se mantiene disponible la carga manual.', err);
+          setStatus('No se encontró ' + excelPath + ' · selecciónalo manualmente');
+        });
     }catch(err){
-      console.warn('Fallo en autoLoadDefaultExcel:', err);
+      console.warn('Fallo en autoLoadVitacExcel:', err);
+      setStatus('0/7 · esperando Excel VITAC_XXXXX.xlsx…');
     }
   })();
 });
